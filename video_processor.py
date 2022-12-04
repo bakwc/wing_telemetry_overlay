@@ -3,6 +3,7 @@
 import cv2
 import csv
 import numpy as np
+import geopy.distance
 
 from configparser import ConfigParser
 
@@ -80,14 +81,61 @@ def telemetry_time_to_seconds(telemetry_time):
         hours = int(vals[-3])
     return hours * 60 * 60 + minutes * 60 + seconds
 
+def format_distance(distance_meters):
+    if distance_meters < 1000:
+        m = int(distance_meters)
+        return f'{m}m'
+    km = distance_meters / 1000
+    if km < 10:
+        return f'{km:.2f}km'
+    return f'{km:.1f}km'
+
 class Telemetry:
-    def __init__(self, telemetry_file):
+    def __init__(self, telemetry_file, modes):
         with open(telemetry_file) as f:
             data = [{k: v for k, v in row.items()}
                  for row in csv.DictReader(f, skipinitialspace=True)]
             for element in data:
                 #print(element['Time'], telemetry_time_to_seconds(element['Time']))
                 element['time_seconds'] = telemetry_time_to_seconds(element['Time'])
+                gps = element['GPS'].split()
+                if len(gps) == 2:
+                    element['lat'] = float(gps[0])
+                    element['lon'] = float(gps[1])
+
+            # erase duplicates
+            new_data = []
+            prev_vals = None
+            for element in data:
+                curr_vals = (
+                    element['GPS'],
+                    element['GSpd(kmh)'],
+                    element['Alt(m)'],
+                )
+                if curr_vals == prev_vals:
+                    continue
+                prev_vals = curr_vals
+                new_data.append(element)
+            data = new_data
+
+            # calculate distance
+            total_distance = 0
+            prev_cords = None
+            for element in data:
+                if 'lat' not in element:
+                    continue
+                if float(element['GSpd(kmh)']) < 3.0 and abs(float(element['Alt(m)'])) < 3.0:
+                    total_distance = 0
+                    prev_cords = None
+                curr_cords = (element['lat'], element['lon'])
+                if prev_cords is not None:
+                    curr_distance = geopy.distance.geodesic(prev_cords, curr_cords).m
+                    total_distance += curr_distance
+
+                element['total_distance'] = total_distance
+                prev_cords = curr_cords
+
+        self.modes = modes
         self.data = sortedcollection.SortedCollection(data, key=lambda x: x['time_seconds'])
 
     def get_row(self, video_time, sync_video_start, sync_video_finish, sync_telemetry_start, sync_telemetry_finish):
@@ -123,10 +171,15 @@ class Telemetry:
         factor = time_left / time_delta
 
         result = {}
-        for field_name in ('Alt(m)', 'GSpd(kmh)',):
+        for field_name in ('Alt(m)', 'GSpd(kmh)', 'lat', 'lon', 'total_distance'):
             curr_value = float(curr_frame[field_name])
             prev_value = float(prev_frame[field_name])
             result[field_name] = prev_value + factor * (curr_value - prev_value)
+
+        for mode in self.modes:
+            mode_switch_value = curr_frame[mode['field']]
+            if mode_switch_value == mode['value']:
+                result['mode'] = mode['name']
 
         return result
 
@@ -154,10 +207,24 @@ def draw_text(img, txt, pos, color, size):
     #return cv2.putText(img, txt, pos, font, size[0], color, size[1], cv2.LINE_AA)
 
 
+def get_modes_settings(settings):
+    modes = []
+    for i in range(10):
+        curr_name = f'mode_{i}_name'
+        if curr_name not in settings:
+            continue
+        modes.append({
+            'name': settings[curr_name],
+            'field': settings[f'mode_{i}_field'],
+            'value': settings[f'mode_{i}_value'],
+        })
+    return modes
+
 def main():
 
     settings = load_settings('settings.ini')
-    telemetry = Telemetry(settings['telemetry_file'])
+    modes = get_modes_settings(settings)
+    telemetry = Telemetry(settings['telemetry_file'], modes)
 
     sync_video_start = telemetry_time_to_seconds(settings['sync_video_start'])
     sync_video_finish = telemetry_time_to_seconds(settings['sync_video_finish'])
@@ -206,13 +273,20 @@ def main():
 
         GREEN_COLOR = (155, 255, 155, 165)
         if curr_telemetry is not None:
+
             altitude = int(curr_telemetry['Alt(m)'])
             frame = draw_text(frame, f'm {altitude}', (0.75, 0.45), GREEN_COLOR, (1.5, 6))
 
             velocity = int(curr_telemetry['GSpd(kmh)'])
             frame = draw_text(frame, f'{velocity} km/h', (0.14, 0.45), GREEN_COLOR, (1.5, 6))
 
-            #frame = draw_text(frame, f'Assist allied ground units', (0.4, 0.15), GREEN_COLOR, (1.3, 4))
+            mode = curr_telemetry.get('mode')
+            if mode:
+                frame = draw_text(frame, mode, (0.47, 0.15), GREEN_COLOR, (1.4, 4))
+
+            total_distance = curr_telemetry.get('total_distance', 0)
+
+            frame = draw_text(frame, format_distance(total_distance), (0.47, 0.2), GREEN_COLOR, (1.4, 4))
 
             #out_str += f' Alt: {altitude}m  Vel: {velocity}kmh'
 
