@@ -135,8 +135,10 @@ def draw_text(img, txt, pos, color, size):
     font = cv2.FONT_HERSHEY_SIMPLEX
     pos = (int(pos[0] * img.shape[1]), int(pos[1] * img.shape[0]))
 
-    img_txt = np.zeros((50, 200, 4), np.uint8)
+    img_txt = np.zeros((100, 600, 4), np.uint8)
     img_txt = cv2.putText(img_txt, txt, (0, 46), font, size[0], color, size[1], cv2.LINE_AA)
+
+    img_txt = cv2.resize(img_txt, (0, 0), fx=0.5, fy=0.5)
 
     #cv2.imshow('txt', img_txt)
 
@@ -164,6 +166,16 @@ def main():
 
     cap = cv2.VideoCapture(settings['video_file'])
 
+    map = cv2.imread('map.jpg')
+    map = cv2.cvtColor(map, cv2.COLOR_RGB2RGBA)
+
+    map[:, :, 3] = (128,)
+
+    map = cv2.resize(map, (0, 0), fx=0.4, fy=0.4)
+
+
+
+
     if not cap.isOpened():
         print("Error opening video file")
         return
@@ -173,8 +185,6 @@ def main():
         ret, frame = cap.read()
         if not ret:
             break
-
-        #frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
 
 
         frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -193,14 +203,22 @@ def main():
 
 
         out_str = f'{frame_time:.1f}'
+
+        GREEN_COLOR = (155, 255, 155, 165)
         if curr_telemetry is not None:
             altitude = int(curr_telemetry['Alt(m)'])
-            frame = draw_text(frame, f'm {altitude}', (0.75, 0.45), (133, 255, 133, 154), (0.8, 2))
+            frame = draw_text(frame, f'm {altitude}', (0.75, 0.45), GREEN_COLOR, (1.5, 6))
 
             velocity = int(curr_telemetry['GSpd(kmh)'])
-            frame = draw_text(frame, f'{velocity} km/h', (0.14, 0.45), (133, 255, 133, 154), (0.8, 2))
+            frame = draw_text(frame, f'{velocity} km/h', (0.14, 0.45), GREEN_COLOR, (1.5, 6))
+
+            #frame = draw_text(frame, f'Assist allied ground units', (0.4, 0.15), GREEN_COLOR, (1.3, 4))
 
             #out_str += f' Alt: {altitude}m  Vel: {velocity}kmh'
+
+        add_transparent_image(frame, map, 0, 0, 80, 400)
+
+
 
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
@@ -224,6 +242,11 @@ def main():
             cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_num + fps * 5))
         if key_in == ord('a'):
             cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(frame_num - fps * 5)))
+
+        if key_in == ord('c'):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_num + fps * 30))
+        if key_in == ord('z'):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(frame_num - fps * 30)))
      
     # When everything done, release
     # the video capture object
