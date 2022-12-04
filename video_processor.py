@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import os.path
 
+import math
 import cv2
 import csv
 import numpy as np
@@ -10,6 +12,10 @@ from configparser import ConfigParser
 import sortedcollection
 from sortedcollection import SortedCollection
 
+
+ACCESS_TOKEN = 'pk.eyJ1IjoiZmlwcG8iLCJhIjoiY2xiOXNrd2g4MHk3MjNvcXBveTQydHJjNCJ9.YyjHkIEzp2uNXR-ceE496A'
+TILES_ZOOM = 17
+
 class MyParser(ConfigParser):
 
     def as_dict(self):
@@ -19,6 +25,70 @@ class MyParser(ConfigParser):
             d[k].pop('__name__', None)
         return d
 
+
+def deg2num(lat_deg, lon_deg, zoom):
+    lat_rad = math.radians(lat_deg)
+    n = 2.0 ** zoom
+    xtile = int((lon_deg + 180.0) / 360.0 * n)
+    ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+    return (xtile, ytile)
+
+
+tiles_cache = set()
+tiles_cache_cv = {}  # tile_key => opencv img
+
+
+def precache_single_tile(x, y, z):
+    key = f'{z}_{x}_{y}'
+    if key in tiles_cache:
+        return
+    if not os.path.exists('tiles_cache'):
+        os.mkdir('tiles_cache')
+    img_file_path = os.path.join('tiles_cache', key + '.jpg')
+    if os.path.exists(img_file_path):
+        tiles_cache.add(key)
+        return
+    url = f'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token={ACCESS_TOKEN}'
+
+    from urllib.request import urlopen
+
+    print('downloading file', img_file_path)
+
+    with urlopen(url) as file:
+        content = file.read()
+
+    with open(img_file_path, 'wb') as download:
+        download.write(content)
+
+    tiles_cache.add(key)
+
+
+def precache_tiles(lat, lon):
+    x_tile, y_tile = deg2num(lat, lon, TILES_ZOOM)
+
+    for x in range(x_tile - 1, x_tile + 2):
+        for y in range(y_tile - 1, y_tile + 2):
+            precache_single_tile(x, y, TILES_ZOOM)
+
+def get_tile(lat, lon):
+    x_tile, y_tile = deg2num(lat, lon, TILES_ZOOM)
+    key = f'{TILES_ZOOM}_{x_tile}_{y_tile}'
+    result = tiles_cache_cv.get(key)
+    if result is not None:
+        return result
+
+    img_file_path = os.path.join('tiles_cache', key + '.jpg')
+
+    map_img = cv2.imread(img_file_path)
+    map_img = cv2.cvtColor(map_img, cv2.COLOR_RGB2RGBA)
+    map_img[:, :, 3] = (155,)
+    map_img = cv2.resize(map_img, (0, 0), fx=0.4, fy=0.4)
+    tiles_cache_cv[key] = map_img
+    return map_img
+
+def get_centered_tile(lat, lon):
+    #todo: generate centered tile
+    return get_tile(lat, lon)
 
 def add_transparent_image(background, foreground, x_offset=None, y_offset=None, shift_x=0, shift_y=0):
     bg_h, bg_w, bg_channels = background.shape
@@ -135,6 +205,8 @@ class Telemetry:
                 element['total_distance'] = total_distance
                 prev_cords = curr_cords
 
+                precache_tiles(element['lat'], element['lon'])
+
         self.modes = modes
         self.data = sortedcollection.SortedCollection(data, key=lambda x: x['time_seconds'])
 
@@ -220,6 +292,7 @@ def get_modes_settings(settings):
         })
     return modes
 
+
 def main():
 
     settings = load_settings('settings.ini')
@@ -233,12 +306,12 @@ def main():
 
     cap = cv2.VideoCapture(settings['video_file'])
 
-    map = cv2.imread('map.jpg')
-    map = cv2.cvtColor(map, cv2.COLOR_RGB2RGBA)
-
-    map[:, :, 3] = (128,)
-
-    map = cv2.resize(map, (0, 0), fx=0.4, fy=0.4)
+    # map = cv2.imread('map.jpg')
+    # map = cv2.cvtColor(map, cv2.COLOR_RGB2RGBA)
+    #
+    # map[:, :, 3] = (128,)
+    #
+    # map = cv2.resize(map, (0, 0), fx=0.4, fy=0.4)
 
 
 
@@ -290,10 +363,9 @@ def main():
 
             #out_str += f' Alt: {altitude}m  Vel: {velocity}kmh'
 
-        add_transparent_image(frame, map, 0, 0, 80, 400)
-
-
-
+            if 'lat' in curr_telemetry:
+                map_img = get_tile(curr_telemetry['lat'], curr_telemetry['lon'])
+                add_transparent_image(frame, map_img, 0, 0, 80, 400)
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
         # pos = (50, int(0.8*frame.shape[0]))
