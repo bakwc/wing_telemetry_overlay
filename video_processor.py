@@ -14,7 +14,7 @@ from sortedcollection import SortedCollection
 
 
 ACCESS_TOKEN = 'pk.eyJ1IjoiZmlwcG8iLCJhIjoiY2xiOXNrd2g4MHk3MjNvcXBveTQydHJjNCJ9.YyjHkIEzp2uNXR-ceE496A'
-TILES_ZOOM = 17
+TILES_ZOOM = 15
 
 class MyParser(ConfigParser):
 
@@ -92,7 +92,7 @@ def get_tile(lat, lon):
 
     map_img = cv2.imread(img_file_path)
     map_img = cv2.cvtColor(map_img, cv2.COLOR_RGB2RGBA)
-    map_img[:, :, 3] = (155,)
+    map_img[:, :, 3] = (200,)
     map_img = cv2.resize(map_img, (0, 0), fx=0.4, fy=0.4)
     tiles_cache_cv[key] = map_img
     return (map_img, cords_top_left, cords_bottom_right)
@@ -172,7 +172,15 @@ def get_big_tile(lat, lon):
 
     #return result, (result_top, result_left), (result_bottom, result_right)
 
-def get_centered_tile(lat, lon):
+PLANE_ICON = cv2.imread('plane_icon.png', cv2.IMREAD_UNCHANGED)
+
+def rotate_image(image, angle):
+  image_center = tuple(np.array(image.shape[1::-1]) / 2)
+  rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+  result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
+  return result
+
+def get_centered_tile(lat, lon, angle):
     #todo: generate centered tile
     #img, cords_top_left, cords_bottom_right = get_tile(lat, lon)
 
@@ -206,9 +214,22 @@ def get_centered_tile(lat, lon):
 
     draw_img(result, img, pos_x, pos_y)
 
-    result = cv2.circle(result, (int(img_heigh * 0.5), int(img_width * 0.5)), 1, (255, 255, 255, 210), 2)
+    #result = cv2.circle(result, (int(img_heigh * 0.5), int(img_width * 0.5)), 1, (255, 255, 255, 210), 2)
 
+    #draw_img(result, PLANE_ICON, int(img_width * 0.5), int(img_heigh * 0.5))
 
+    #angle_deg = math.degrees(angle * 0.1)
+
+    #print(angle * 0.1, angle_deg)
+
+    if angle is not None:
+        #print(angle)
+        plane_icon = rotate_image(PLANE_ICON, angle - 90)
+        add_transparent_image(
+            result, plane_icon, 0, 0,
+            int(img_width * 0.5 - plane_icon.shape[1] * 0.5),
+            int(img_heigh * 0.5 - plane_icon.shape[0] * 0.5),
+        )
 
 
 
@@ -243,7 +264,7 @@ def add_transparent_image(background, foreground, x_offset=None, y_offset=None, 
     bg_h, bg_w, bg_channels = background.shape
     fg_h, fg_w, fg_channels = foreground.shape
 
-    assert bg_channels == 3, f'background image should have exactly 3 channels (RGB). found:{bg_channels}'
+    #assert bg_channels == 3, f'background image should have exactly 3 channels (RGB). found:{bg_channels}'
     assert fg_channels == 4, f'foreground image should have exactly 4 channels (RGBA). found:{fg_channels}'
 
     # center by default
@@ -267,7 +288,7 @@ def add_transparent_image(background, foreground, x_offset=None, y_offset=None, 
     #print('sizes:', w, h)
 
     foreground = foreground[fg_y:fg_y + h, fg_x:fg_x + w]
-    background_subsection = background[bg_y:bg_y + h, bg_x:bg_x + w]
+    background_subsection = background[bg_y:bg_y + h, bg_x:bg_x + w][:, :, :3]
 
 
     # separate alpha and color channels from the foreground image
@@ -281,7 +302,7 @@ def add_transparent_image(background, foreground, x_offset=None, y_offset=None, 
     composite = background_subsection * (1 - alpha_mask) + foreground_colors * alpha_mask
 
     # overwrite the section of the background image that has been updated
-    background[bg_y:bg_y + h, bg_x:bg_x + w] = composite
+    background[bg_y:bg_y + h, bg_x:bg_x + w, :3] = composite
 
 
 def load_settings(settings_file):
@@ -352,6 +373,10 @@ class Telemetry:
                     total_distance += curr_distance
 
                 element['total_distance'] = total_distance
+                if prev_cords:
+                    element['direction_y'] = curr_cords[0] - prev_cords[0]
+                    element['direction_x'] = curr_cords[1] - prev_cords[1]
+                #element['angle'] = math.degrees(math.atan2(element['direction'][1], element['direction'][0]))
                 prev_cords = curr_cords
 
                 precache_tiles(element['lat'], element['lon'])
@@ -392,10 +417,15 @@ class Telemetry:
         factor = time_left / time_delta
 
         result = {}
-        for field_name in ('Alt(m)', 'GSpd(kmh)', 'lat', 'lon', 'total_distance'):
+        for field_name in ('Alt(m)', 'GSpd(kmh)', 'lat', 'lon', 'total_distance', 'direction_x', 'direction_y'):
+            if field_name not in curr_frame or field_name not in prev_frame:
+                continue
             curr_value = float(curr_frame[field_name])
             prev_value = float(prev_frame[field_name])
             result[field_name] = prev_value + factor * (curr_value - prev_value)
+
+        for field_name in ('Hdg(@)',):
+            result[field_name] = float(curr_frame[field_name])
 
         for mode in self.modes:
             mode_switch_value = curr_frame[mode['field']]
@@ -518,8 +548,11 @@ def main():
             #out_str += f' Alt: {altitude}m  Vel: {velocity}kmh'
 
             if 'lat' in curr_telemetry:
-                map_img = get_centered_tile(curr_telemetry['lat'], curr_telemetry['lon'])
-                add_transparent_image(frame, map_img, 0, 0, 80, 440)
+                angle = None
+                if 'direction_y' in curr_telemetry:
+                    angle = math.degrees(math.atan2(curr_telemetry['direction_y'], curr_telemetry['direction_x']))
+                map_img = get_centered_tile(curr_telemetry['lat'], curr_telemetry['lon'], angle)
+                add_transparent_image(frame, map_img, 0, 0, 80, 410)
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
         # pos = (50, int(0.8*frame.shape[0]))
