@@ -15,6 +15,8 @@ from sortedcollection import SortedCollection
 
 ACCESS_TOKEN = 'pk.eyJ1IjoiZmlwcG8iLCJhIjoiY2xiOXNrd2g4MHk3MjNvcXBveTQydHJjNCJ9.YyjHkIEzp2uNXR-ceE496A'
 TILES_ZOOM = 15
+GREEN_COLOR = (155, 255, 155, 165)
+GREEN_COLOR_LIGHT = (155, 255, 155, 90)
 
 class MyParser(ConfigParser):
 
@@ -299,7 +301,10 @@ def add_transparent_image(background, foreground, x_offset=None, y_offset=None, 
     alpha_mask = np.dstack((alpha_channel, alpha_channel, alpha_channel))
 
     # combine the background with the overlay image weighted by alpha
-    composite = background_subsection * (1 - alpha_mask) + foreground_colors * alpha_mask
+    try:
+        composite = background_subsection * (1 - alpha_mask) + foreground_colors * alpha_mask
+    except ValueError:
+        return
 
     # overwrite the section of the background image that has been updated
     background[bg_y:bg_y + h, bg_x:bg_x + w, :3] = composite
@@ -458,6 +463,26 @@ def draw_text(img, txt, pos, color, size):
     #return cv2.putText(img, txt, pos, font, size[0], color, size[1], cv2.LINE_AA)
 
 
+def draw_side_indicator(frame, altitude, factor=10, step=0.09, pos_x=0.85, scale=1.0, start=-4, end=4):
+    altitude_rounded = int(altitude / factor)
+    diff = altitude - (altitude_rounded * factor)
+    diff_factor = diff / factor
+
+    for i in range(start, end+1):
+        curr_altitude = int(scale * (altitude_rounded - i) * factor)
+        curr_text = f'{curr_altitude} -'
+        if pos_x < 0.5:
+            curr_text = f'- {curr_altitude}'
+        frame = draw_text(
+            frame,
+            curr_text,
+            (pos_x, 0.44 + i * step + diff_factor * step),
+            GREEN_COLOR_LIGHT,
+            (1.1, 3),
+        )
+    return frame
+
+
 def get_modes_settings(settings):
     modes = []
     for i in range(10):
@@ -525,17 +550,23 @@ def main():
         )
 
 
-
-        out_str = f'{frame_time:.1f}'
-
-        GREEN_COLOR = (155, 255, 155, 165)
         if curr_telemetry is not None:
 
             altitude = int(curr_telemetry['Alt(m)'])
             frame = draw_text(frame, f'm {altitude}', (0.75, 0.45), GREEN_COLOR, (1.5, 6))
 
+            frame = draw_side_indicator(
+                frame, curr_telemetry['Alt(m)'], pos_x=0.92, scale=0.1,
+                step=0.12, start=-3, end=3,
+            )
+
             velocity = int(curr_telemetry['GSpd(kmh)'])
             frame = draw_text(frame, f'{velocity} km/h', (0.14, 0.45), GREEN_COLOR, (1.5, 6))
+
+            frame = draw_side_indicator(
+                frame, curr_telemetry['GSpd(kmh)'], pos_x = 0.02, factor=5, scale=1.0,
+                step=0.08, start=-4, end=5,
+            )
 
             mode = curr_telemetry.get('mode')
             if mode:
@@ -552,7 +583,7 @@ def main():
                 if 'direction_y' in curr_telemetry:
                     angle = math.degrees(math.atan2(curr_telemetry['direction_y'], curr_telemetry['direction_x']))
                 map_img = get_centered_tile(curr_telemetry['lat'], curr_telemetry['lon'], angle)
-                add_transparent_image(frame, map_img, 0, 0, 80, 410)
+                add_transparent_image(frame, map_img, 0, 0, 100, 410)
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
         # pos = (50, int(0.8*frame.shape[0]))
