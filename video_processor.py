@@ -107,14 +107,17 @@ def draw_img(dst_img, src_img, pos_x, pos_y):
     src_px = 0
     src_py = 0
 
+    #print('px', px)
+
     if py < 0:
         h += py
-        py = 0
         src_py -= py
+        py = 0
+
     if px < 0:
         w += px
-        px = 0
         src_px -= px
+        px = 0
 
     if px >= dst_img.shape[1]:
         return
@@ -128,6 +131,8 @@ def draw_img(dst_img, src_img, pos_x, pos_y):
     if py + h >= dst_img.shape[0]:
         h -= (py + h - dst_img.shape[0])
 
+    #print('src_px', src_px)
+
     dst_img[py:py + h, px:px + w] = src_img[src_py:src_py + h, src_px:src_px + w]
 
 def get_big_tile(lat, lon):
@@ -140,10 +145,10 @@ def get_big_tile(lat, lon):
 
     result = np.zeros((img_heigh*3, img_width*3, 4), np.uint8)
 
-    result_top = cords_top_left[0]
-    result_left = cords_top_left[1]
-    result_bottom = cords_bottom_right[0]
-    result_right = cords_bottom_right[1]
+    # result_top = cords_top_left[0]
+    # result_left = cords_top_left[1]
+    # result_bottom = cords_bottom_right[0]
+    # result_right = cords_bottom_right[1]
 
     for curr_y_idx, curr_lat in enumerate([lat - lat_delta, lat, lat + lat_delta]):
         for curr_x_idx, curr_lon in enumerate([lon - lon_delta, lon, lon + lon_delta]):
@@ -158,12 +163,14 @@ def get_big_tile(lat, lon):
 
             #result[0:205, 0:205] = curr_img
 
-            result_top = max(result_top, curr_cords_top_left[0])
-            result_left = max(result_left, curr_cords_top_left[1])
-            result_bottom = min(result_bottom, curr_cords_bottom_right[0])
-            result_right = min(result_right, curr_cords_bottom_right[1])
+            # result_top = max(result_top, curr_cords_top_left[0])
+            # result_left = max(result_left, curr_cords_top_left[1])
+            # result_bottom = min(result_bottom, curr_cords_bottom_right[0])
+            # result_right = min(result_right, curr_cords_bottom_right[1])
 
-    return result, (result_top, result_left), (result_bottom, result_right)
+    return result, get_tile(lat-lat_delta, lon-lon_delta)[1], get_tile(lat+lat_delta, lon+lon_delta)[2]
+
+    #return result, (result_top, result_left), (result_bottom, result_right)
 
 def get_centered_tile(lat, lon):
     #todo: generate centered tile
@@ -171,7 +178,7 @@ def get_centered_tile(lat, lon):
 
     img, cords_top_left, cords_bottom_right = get_big_tile(lat, lon)
 
-    return img
+    #return img
 
 
     lat_delta = cords_bottom_right[0] - cords_top_left[0]
@@ -180,19 +187,57 @@ def get_centered_tile(lat, lon):
     lat_pos_factor = (lat - cords_top_left[0]) / lat_delta
     lon_pos_factor = (lon - cords_top_left[1]) / lon_delta
 
-    img_width = img.shape[1]
-    img_heigh = img.shape[0]
+    img_width = int(img.shape[1] / 3)
+    img_heigh = int(img.shape[0] / 3)
 
-    pos_x = int((img_width * 0.5) - (lon_pos_factor * img_width))
-    pos_y = int((img_heigh * 0.5) - (lat_pos_factor * img_heigh))
+    pos_x = int((img_width * 0.5) - (lon_pos_factor * img_width * 3))
+    pos_y = int((img_heigh * 0.5) - (lat_pos_factor * img_heigh * 3))
+
+    #print(pos_x)
+
+    #     pos      left    right       delta     factor        img_w
+    #      10       5       40          45        0.22          20
+    #      15       5       40          45        0.33          20
+    #      20       5       40          45        0.44          20
 
     result = np.zeros((img_heigh, img_width, 4), np.uint8)
 
+
+
     draw_img(result, img, pos_x, pos_y)
+
+    result = cv2.circle(result, (int(img_heigh * 0.5), int(img_width * 0.5)), 1, (255, 255, 255, 210), 2)
+
+
+
+
 
     #result[pos_y:pos_y + img.shape[0], pos_x:pos_x + img.shape[1]] = img
 
     return result
+
+
+def test_map():
+
+    curr_lat = 41.582467
+    curr_lon = 41.571244
+    lat_step = 0.000
+    lon_step = 0.0001
+
+    while True:
+        curr_lat += lat_step
+        curr_lon += lon_step
+
+        map_img = get_centered_tile(curr_lat, curr_lon)
+        cv2.imshow('Map', map_img)
+
+        key_in = cv2.waitKey(100) & 0xFF
+
+        if key_in == ord('q'):
+            break
+
+    cv2.destroyAllWindows()
+
 
 def add_transparent_image(background, foreground, x_offset=None, y_offset=None, shift_x=0, shift_y=0):
     bg_h, bg_w, bg_channels = background.shape
@@ -403,6 +448,11 @@ def main():
     modes = get_modes_settings(settings)
     telemetry = Telemetry(settings['telemetry_file'], modes)
 
+    # test_map()
+    # return
+
+
+
     sync_video_start = telemetry_time_to_seconds(settings['sync_video_start'])
     sync_video_finish = telemetry_time_to_seconds(settings['sync_video_finish'])
     sync_telemetry_start = telemetry_time_to_seconds(settings['sync_telemetry_start'])
@@ -469,7 +519,7 @@ def main():
 
             if 'lat' in curr_telemetry:
                 map_img = get_centered_tile(curr_telemetry['lat'], curr_telemetry['lon'])
-                add_transparent_image(frame, map_img, 0, 0, 80, 100)
+                add_transparent_image(frame, map_img, 0, 0, 80, 440)
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
         # pos = (50, int(0.8*frame.shape[0]))
