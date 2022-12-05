@@ -175,6 +175,7 @@ def get_big_tile(lat, lon):
     #return result, (result_top, result_left), (result_bottom, result_right)
 
 PLANE_ICON = cv2.imread('plane_icon.png', cv2.IMREAD_UNCHANGED)
+BATTERY_ICON = cv2.imread('battery-icon.png', cv2.IMREAD_UNCHANGED)
 
 def rotate_image(image, angle):
   image_center = tuple(np.array(image.shape[1::-1]) / 2)
@@ -422,14 +423,17 @@ class Telemetry:
         factor = time_left / time_delta
 
         result = {}
-        for field_name in ('Alt(m)', 'GSpd(kmh)', 'lat', 'lon', 'total_distance', 'direction_x', 'direction_y'):
+        for field_name in (
+                'Alt(m)', 'GSpd(kmh)', 'lat', 'lon', 'total_distance', 'direction_x', 'direction_y',
+                'Capa(mAh)'
+        ):
             if field_name not in curr_frame or field_name not in prev_frame:
                 continue
             curr_value = float(curr_frame[field_name])
             prev_value = float(prev_frame[field_name])
             result[field_name] = prev_value + factor * (curr_value - prev_value)
 
-        for field_name in ('Hdg(@)',):
+        for field_name in ('Hdg(@)', 'Bat_(%)'):
             result[field_name] = float(curr_frame[field_name])
 
         for mode in self.modes:
@@ -444,8 +448,8 @@ def draw_text(img, txt, pos, color, size):
     font = cv2.FONT_HERSHEY_SIMPLEX
     pos = (int(pos[0] * img.shape[1]), int(pos[1] * img.shape[0]))
 
-    img_txt = np.zeros((100, 600, 4), np.uint8)
-    img_txt = cv2.putText(img_txt, txt, (0, 46), font, size[0], color, size[1], cv2.LINE_AA)
+    img_txt = np.zeros((122, 600, 4), np.uint8)
+    img_txt = cv2.putText(img_txt, txt, (0, 56), font, size[0], color, size[1], cv2.LINE_AA)
 
     img_txt = cv2.resize(img_txt, (0, 0), fx=0.5, fy=0.5)
 
@@ -566,6 +570,17 @@ def main():
             frame = draw_side_indicator(
                 frame, curr_telemetry['GSpd(kmh)'], pos_x = 0.02, factor=5, scale=1.0,
                 step=0.08, start=-4, end=5,
+            )
+
+            battery = int(curr_telemetry['Bat_(%)'])
+            mah = int(curr_telemetry['Capa(mAh)'])
+            frame = draw_text(frame, f'{battery}%', (0.83, 0.853), GREEN_COLOR, (2.6, 5))
+            frame = draw_text(frame, f'{mah} mah', (0.81, 0.895), GREEN_COLOR, (1.25, 3))
+
+            add_transparent_image(
+                frame, BATTERY_ICON, 0, 0,
+                int(0.80 * frame.shape[1]),
+                int(0.80 * frame.shape[0]),
             )
 
             mode = curr_telemetry.get('mode')
