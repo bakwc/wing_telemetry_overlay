@@ -366,12 +366,17 @@ class Telemetry:
 
             # calculate distance
             total_distance = 0
+            min_median_bat = 100.0
             prev_cords = None
+
+            bat_vals = []
+
             for element in data:
                 if 'lat' not in element:
                     continue
                 if float(element['GSpd(kmh)']) < 3.0 and abs(float(element['Alt(m)'])) < 3.0:
                     total_distance = 0
+                    min_median_bat = 100.0
                     prev_cords = None
                 curr_cords = (element['lat'], element['lon'])
                 if prev_cords is not None:
@@ -382,6 +387,18 @@ class Telemetry:
                 if prev_cords:
                     element['direction_y'] = curr_cords[0] - prev_cords[0]
                     element['direction_x'] = curr_cords[1] - prev_cords[1]
+
+                bat_vals.append(float(element['Bat_(%)']))
+                if len(bat_vals) > 30:
+                    bat_vals = bat_vals[1:]
+
+                median_bat = sorted(bat_vals[:])[int(len(bat_vals) * 0.5)]
+                min_median_bat = min(median_bat, min_median_bat)
+
+                element['median_bat'] = median_bat
+                element['min_median_bat'] = min_median_bat
+
+
                 #element['angle'] = math.degrees(math.atan2(element['direction'][1], element['direction'][0]))
                 prev_cords = curr_cords
 
@@ -433,7 +450,7 @@ class Telemetry:
             prev_value = float(prev_frame[field_name])
             result[field_name] = prev_value + factor * (curr_value - prev_value)
 
-        for field_name in ('Hdg(@)', 'Bat_(%)'):
+        for field_name in ('Hdg(@)', 'Bat_(%)', 'median_bat', 'min_median_bat'):
             result[field_name] = float(curr_frame[field_name])
 
         for mode in self.modes:
@@ -532,7 +549,7 @@ def main():
     if not cap.isOpened():
         print("Error opening video file")
         return
-    
+
     # Read until video is completed
     while cap.isOpened():
         ret, frame = cap.read()
@@ -572,7 +589,8 @@ def main():
                 step=0.08, start=-4, end=5,
             )
 
-            battery = int(curr_telemetry['Bat_(%)'])
+            battery = int(curr_telemetry['min_median_bat'])
+
             mah = int(curr_telemetry['Capa(mAh)'])
             frame = draw_text(frame, f'{battery}%', (0.83, 0.853), GREEN_COLOR, (2.6, 5))
             frame = draw_text(frame, f'{mah} mah', (0.81, 0.895), GREEN_COLOR, (1.25, 3))
