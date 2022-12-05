@@ -33,6 +33,13 @@ def deg2num(lat_deg, lon_deg, zoom):
     ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
     return (xtile, ytile)
 
+def num2deg(xtile, ytile, zoom):
+  n = 2.0 ** zoom
+  lon_deg = xtile / n * 360.0 - 180.0
+  lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
+  lat_deg = math.degrees(lat_rad)
+  return (lat_deg, lon_deg)
+
 
 tiles_cache = set()
 tiles_cache_cv = {}  # tile_key => opencv img
@@ -74,8 +81,12 @@ def get_tile(lat, lon):
     x_tile, y_tile = deg2num(lat, lon, TILES_ZOOM)
     key = f'{TILES_ZOOM}_{x_tile}_{y_tile}'
     result = tiles_cache_cv.get(key)
+
+    cords_top_left = num2deg(x_tile, y_tile, TILES_ZOOM)
+    cords_bottom_right = num2deg(x_tile + 1, y_tile + 1, TILES_ZOOM)
+
     if result is not None:
-        return result
+        return (result, cords_top_left, cords_bottom_right)
 
     img_file_path = os.path.join('tiles_cache', key + '.jpg')
 
@@ -84,11 +95,104 @@ def get_tile(lat, lon):
     map_img[:, :, 3] = (155,)
     map_img = cv2.resize(map_img, (0, 0), fx=0.4, fy=0.4)
     tiles_cache_cv[key] = map_img
-    return map_img
+    return (map_img, cords_top_left, cords_bottom_right)
+
+def draw_img(dst_img, src_img, pos_x, pos_y):
+
+    h = src_img.shape[0]
+    w = src_img.shape[1]
+    px = pos_x
+    py = pos_y
+
+    src_px = 0
+    src_py = 0
+
+    if py < 0:
+        h += py
+        py = 0
+        src_py -= py
+    if px < 0:
+        w += px
+        px = 0
+        src_px -= px
+
+    if px >= dst_img.shape[1]:
+        return
+
+    if py >= dst_img.shape[0]:
+        return
+
+    if px + w >= dst_img.shape[1]:
+        w -= (px + w - dst_img.shape[1])
+
+    if py + h >= dst_img.shape[0]:
+        h -= (py + h - dst_img.shape[0])
+
+    dst_img[py:py + h, px:px + w] = src_img[src_py:src_py + h, src_px:src_px + w]
+
+def get_big_tile(lat, lon):
+    img_center, cords_top_left, cords_bottom_right = get_tile(lat, lon)
+    lat_delta = cords_bottom_right[0] - cords_top_left[0]
+    lon_delta = cords_bottom_right[1] - cords_top_left[1]
+
+    img_heigh = img_center.shape[0]
+    img_width = img_center.shape[1]
+
+    result = np.zeros((img_heigh*3, img_width*3, 4), np.uint8)
+
+    result_top = cords_top_left[0]
+    result_left = cords_top_left[1]
+    result_bottom = cords_bottom_right[0]
+    result_right = cords_bottom_right[1]
+
+    for curr_y_idx, curr_lat in enumerate([lat - lat_delta, lat, lat + lat_delta]):
+        for curr_x_idx, curr_lon in enumerate([lon - lon_delta, lon, lon + lon_delta]):
+            curr_y = int(curr_y_idx * img_center.shape[0])
+            curr_x = int(curr_x_idx * img_center.shape[1])
+            curr_img, curr_cords_top_left, curr_cords_bottom_right = get_tile(curr_lat, curr_lon)
+
+            #print(curr_y, curr_x, img_heigh, img_width)
+            #print(result.shape, curr_img.shape)
+
+            result[curr_y:curr_y + img_heigh, curr_x: curr_x + img_width] = curr_img
+
+            #result[0:205, 0:205] = curr_img
+
+            result_top = max(result_top, curr_cords_top_left[0])
+            result_left = max(result_left, curr_cords_top_left[1])
+            result_bottom = min(result_bottom, curr_cords_bottom_right[0])
+            result_right = min(result_right, curr_cords_bottom_right[1])
+
+    return result, (result_top, result_left), (result_bottom, result_right)
 
 def get_centered_tile(lat, lon):
     #todo: generate centered tile
-    return get_tile(lat, lon)
+    #img, cords_top_left, cords_bottom_right = get_tile(lat, lon)
+
+    img, cords_top_left, cords_bottom_right = get_big_tile(lat, lon)
+
+    return img
+
+
+    lat_delta = cords_bottom_right[0] - cords_top_left[0]
+    lon_delta = cords_bottom_right[1] - cords_top_left[1]
+
+    lat_pos_factor = (lat - cords_top_left[0]) / lat_delta
+    lon_pos_factor = (lon - cords_top_left[1]) / lon_delta
+
+    img_width = img.shape[1]
+    img_heigh = img.shape[0]
+
+    pos_x = int((img_width * 0.5) - (lon_pos_factor * img_width))
+    pos_y = int((img_heigh * 0.5) - (lat_pos_factor * img_heigh))
+
+    result = np.zeros((img_heigh, img_width, 4), np.uint8)
+
+    draw_img(result, img, pos_x, pos_y)
+
+    #result[pos_y:pos_y + img.shape[0], pos_x:pos_x + img.shape[1]] = img
+
+    return result
 
 def add_transparent_image(background, foreground, x_offset=None, y_offset=None, shift_x=0, shift_y=0):
     bg_h, bg_w, bg_channels = background.shape
@@ -364,8 +468,8 @@ def main():
             #out_str += f' Alt: {altitude}m  Vel: {velocity}kmh'
 
             if 'lat' in curr_telemetry:
-                map_img = get_tile(curr_telemetry['lat'], curr_telemetry['lon'])
-                add_transparent_image(frame, map_img, 0, 0, 80, 400)
+                map_img = get_centered_tile(curr_telemetry['lat'], curr_telemetry['lon'])
+                add_transparent_image(frame, map_img, 0, 0, 80, 100)
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
         # pos = (50, int(0.8*frame.shape[0]))
