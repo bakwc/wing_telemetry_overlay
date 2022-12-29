@@ -15,8 +15,13 @@ from sortedcollection import SortedCollection
 
 ACCESS_TOKEN = 'pk.eyJ1IjoiZmlwcG8iLCJhIjoiY2xiOXNrd2g4MHk3MjNvcXBveTQydHJjNCJ9.YyjHkIEzp2uNXR-ceE496A'
 TILES_ZOOM = 15
-GREEN_COLOR = (155, 255, 155, 165)
-GREEN_COLOR_LIGHT = (155, 255, 155, 90)
+#GREEN_COLOR = (155, 255, 155, 165)
+#GREEN_COLOR_LIGHT = (155, 255, 155, 90)
+
+GREEN_COLOR = (155, 255, 155, 210)
+GREEN_COLOR_LIGHT = (155, 255, 155, 148)
+
+SCALE_FACTOR = 1.5
 
 class MyParser(ConfigParser):
 
@@ -465,8 +470,8 @@ def draw_text(img, txt, pos, color, size):
     font = cv2.FONT_HERSHEY_SIMPLEX
     pos = (int(pos[0] * img.shape[1]), int(pos[1] * img.shape[0]))
 
-    img_txt = np.zeros((122, 600, 4), np.uint8)
-    img_txt = cv2.putText(img_txt, txt, (0, 56), font, size[0], color, size[1], cv2.LINE_AA)
+    img_txt = np.zeros((int(122 * SCALE_FACTOR), int(600 * SCALE_FACTOR), 4), np.uint8)
+    img_txt = cv2.putText(img_txt, txt, (0, int(56 * SCALE_FACTOR)), font, size[0] * SCALE_FACTOR, color, int(size[1] * SCALE_FACTOR), cv2.LINE_AA)
 
     img_txt = cv2.resize(img_txt, (0, 0), fx=0.5, fy=0.5)
 
@@ -556,6 +561,8 @@ def main():
         if not ret:
             break
 
+        print(frame.shape)
+
 
         frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         #total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -595,8 +602,13 @@ def main():
             frame = draw_text(frame, f'{battery}%', (0.83, 0.853), GREEN_COLOR, (2.6, 5))
             frame = draw_text(frame, f'{mah} mah', (0.81, 0.895), GREEN_COLOR, (1.25, 3))
 
+            battery_img = cv2.resize(BATTERY_ICON, (
+                int(BATTERY_ICON.shape[0] * SCALE_FACTOR),
+                int(BATTERY_ICON.shape[1] * SCALE_FACTOR)
+            ))
+
             add_transparent_image(
-                frame, BATTERY_ICON, 0, 0,
+                frame, battery_img, 0, 0,
                 int(0.80 * frame.shape[1]),
                 int(0.80 * frame.shape[0]),
             )
@@ -616,7 +628,12 @@ def main():
                 if 'direction_y' in curr_telemetry:
                     angle = math.degrees(math.atan2(curr_telemetry['direction_y'], curr_telemetry['direction_x']))
                 map_img = get_centered_tile(curr_telemetry['lat'], curr_telemetry['lon'], angle)
-                add_transparent_image(frame, map_img, 0, 0, 100, 410)
+                map_img = cv2.resize(map_img, (
+                    int(map_img.shape[0] * SCALE_FACTOR),
+                    int(map_img.shape[1] * SCALE_FACTOR)
+                ))
+
+                add_transparent_image(frame, map_img, 0, 0, int(100 * SCALE_FACTOR), int(410 * SCALE_FACTOR))
 
         # font = cv2.FONT_HERSHEY_SIMPLEX
         # pos = (50, int(0.8*frame.shape[0]))
