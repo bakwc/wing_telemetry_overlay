@@ -542,6 +542,16 @@ def main():
 
     cap = cv2.VideoCapture(settings['video_file'])
 
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+    fourcc = cv2.VideoWriter_fourcc(*'H264')
+    out = cv2.VideoWriter(
+        settings['video_file'] + '_out.mp4',
+        fourcc, fps, (width, height),
+    )
+
     # map = cv2.imread('map.jpg')
     # map = cv2.cvtColor(map, cv2.COLOR_RGB2RGBA)
     #
@@ -653,6 +663,7 @@ def main():
 
         #frame = draw_text(frame, out_str, (0.05, 0.9), (255, 255, 255, 255), (1, 2))
 
+        out.write(frame)
         cv2.imshow('Frame', frame)
 
         key_in = cv2.waitKey(10) & 0xFF
@@ -673,6 +684,7 @@ def main():
     # When everything done, release
     # the video capture object
     cap.release()
+    out.release()
 
     # Closes all the frames
     cv2.destroyAllWindows()
