@@ -19,9 +19,9 @@ TILES_ZOOM = 15
 #GREEN_COLOR_LIGHT = (155, 255, 155, 90)
 
 GREEN_COLOR = (155, 255, 155, 210)
-GREEN_COLOR_LIGHT = (155, 255, 155, 148)
+GREEN_COLOR_LIGHT = (155, 255, 155, 155)
 
-SCALE_FACTOR = 1.5
+SCALE_FACTOR = 1.0
 
 class MyParser(ConfigParser):
 
@@ -394,7 +394,7 @@ class Telemetry:
                     element['direction_x'] = curr_cords[1] - prev_cords[1]
 
                 bat_vals.append(float(element['Bat_(%)']))
-                if len(bat_vals) > 30:
+                if len(bat_vals) > 45:
                     bat_vals = bat_vals[1:]
 
                 median_bat = sorted(bat_vals[:])[int(len(bat_vals) * 0.5)]
@@ -524,6 +524,7 @@ def get_modes_settings(settings):
 
 
 def main():
+    global SCALE_FACTOR
 
     settings = load_settings('settings.ini')
     modes = get_modes_settings(settings)
@@ -561,7 +562,8 @@ def main():
         if not ret:
             break
 
-        print(frame.shape)
+        #print(frame.shape)
+        SCALE_FACTOR = frame.shape[0] / 720.0
 
 
         frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -596,7 +598,7 @@ def main():
                 step=0.08, start=-4, end=5,
             )
 
-            battery = int(curr_telemetry['min_median_bat'])
+            battery = int(curr_telemetry['median_bat'])
 
             mah = int(curr_telemetry['Capa(mAh)'])
             frame = draw_text(frame, f'{battery}%', (0.83, 0.853), GREEN_COLOR, (2.6, 5))
@@ -607,10 +609,16 @@ def main():
                 int(BATTERY_ICON.shape[1] * SCALE_FACTOR)
             ))
 
+            b_px = 0.81
+            b_py = 0.83
+
+            if SCALE_FACTOR > 1.25:
+                b_py = 0.84
+
             add_transparent_image(
                 frame, battery_img, 0, 0,
-                int(0.80 * frame.shape[1]),
-                int(0.80 * frame.shape[0]),
+                int(b_px * frame.shape[1] - 0.50 * battery_img.shape[1]),
+                int(b_py * frame.shape[0] - 0.50 * battery_img.shape[0]),
             )
 
             mode = curr_telemetry.get('mode')
