@@ -13,7 +13,7 @@ import sortedcollection
 from sortedcollection import SortedCollection
 
 
-ACCESS_TOKEN = 'pk.eyJ1IjoiZmlwcG8iLCJhIjoiY2xiOXNrd2g4MHk3MjNvcXBveTQydHJjNCJ9.YyjHkIEzp2uNXR-ceE496A'
+ACCESS_TOKEN = ''
 TILES_ZOOM = 15
 #GREEN_COLOR = (155, 255, 155, 165)
 #GREEN_COLOR_LIGHT = (155, 255, 155, 90)
@@ -524,9 +524,12 @@ def get_modes_settings(settings):
 
 
 def main():
-    global SCALE_FACTOR
+    global SCALE_FACTOR, ACCESS_TOKEN
 
     settings = load_settings('settings.ini')
+
+    ACCESS_TOKEN = settings['mapbox_token']
+
     modes = get_modes_settings(settings)
     telemetry = Telemetry(settings['telemetry_file'], modes)
 
