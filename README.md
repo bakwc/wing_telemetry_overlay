@@ -32,7 +32,7 @@ Open a `settings.ini` file and set the following parameters:
 
  - `video_file` - path to a video file, eg. `C:\videos\my_video.mp4`
  - `sync_video_start` - a time on video (hh:mm:ss) when you launched your plane (open a video and watch it to find out the exact moment)
- - `sync_video_start` - a time on video (hh:mm:ss) when you landed your plane and it stopped moving
+ - `sync_video_finish` - a time on video (hh:mm:ss) when you landed your plane and it stopped moving
  - `telemetry_file` - path to opentx telemetry file, eg. `C:\videos\Model01-2000-07-16.csv`
  - `sync_telemetry_start` - a time inside telemetry file (hh:mm:ss.ms) when you launched the plane (open a telemetry file and find the first row with `GSpd(kmh)` more than 5-10 km/h - that means the plane starts moving)
  - `sync_telemetry_finish` - a time inside telemetry file (hh:mm:ss.ms) when you landed the plane (open a telemetry file and find the first row with `GSpd(kmh)` becomes zero after it was non-zero)
