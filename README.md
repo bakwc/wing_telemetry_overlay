@@ -1,7 +1,7 @@
 ## Wing Telemetry Overlay
 
 A tool to add telemetry overlay on top of the video files. Features:
- - OpenTX telemetry support
+ - OpenTX telemetry support (inav / betaflight / ardupilot)
  - Arbitrary video files
  - Videos with missing frames (eg. DJI Goggles)
  - Mini Map
